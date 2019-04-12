@@ -12,7 +12,7 @@ import (
 	"github.com/nadoo/glider/proxy/socks5"
 )
 
-// https://www.ietf.org/rfc/rfc2616.txt, http methods must be uppercase.
+// https://www.ietf.org/rfc/rfc2616.txt, http methods must be uppercase
 var httpMethods = [...][]byte{
 	[]byte("GET"),
 	[]byte("POST"),
@@ -22,6 +22,7 @@ var httpMethods = [...][]byte{
 	[]byte("HEAD"),
 	[]byte("OPTIONS"),
 	[]byte("TRACE"),
+	[]byte("PATCH"),
 }
 
 // MixedProxy struct
@@ -37,7 +38,7 @@ func init() {
 	proxy.RegisterServer("mixed", NewMixedProxyServer)
 }
 
-// NewMixedProxy returns a mixed proxy.
+// NewMixedProxy returns a mixed proxy
 func NewMixedProxy(s string, dialer proxy.Dialer) (*MixedProxy, error) {
 	u, err := url.Parse(s)
 	if err != nil {
@@ -56,14 +57,13 @@ func NewMixedProxy(s string, dialer proxy.Dialer) (*MixedProxy, error) {
 	return p, nil
 }
 
-// NewMixedProxyServer returns a mixed proxy server.
+// NewMixedProxyServer returns a mixed proxy server
 func NewMixedProxyServer(s string, dialer proxy.Dialer) (proxy.Server, error) {
 	return NewMixedProxy(s, dialer)
 }
 
 // ListenAndServe .
 func (p *MixedProxy) ListenAndServe() {
-
 	go p.socks5.ListenAndServeUDP()
 
 	l, err := net.Listen("tcp", p.addr)
@@ -98,13 +98,13 @@ func (p *MixedProxy) Serve(c net.Conn) {
 	if p.socks5 != nil {
 		head, err := cc.Peek(1)
 		if err != nil {
-			log.F("[mixed] peek error: %s", err)
+			// log.F("[mixed] socks5 peek error: %s", err)
 			return
 		}
 
 		// check socks5, client send socksversion: 5 as the first byte
 		if head[0] == socks5.Version {
-			p.socks5.ServeTCP(cc)
+			p.socks5.Serve(cc)
 			return
 		}
 	}
@@ -112,7 +112,7 @@ func (p *MixedProxy) Serve(c net.Conn) {
 	if p.http != nil {
 		head, err := cc.Peek(8)
 		if err != nil {
-			log.F("[mixed] peek error: %s", err)
+			log.F("[mixed] http peek error: %s", err)
 			return
 		}
 

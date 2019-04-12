@@ -26,10 +26,10 @@ import (
 	"github.com/nadoo/glider/proxy"
 )
 
-// Version is socks5 version number
+// Version is socks5 version number.
 const Version = 5
 
-// SOCKS5 struct
+// SOCKS5 is a base socks5 struct.
 type SOCKS5 struct {
 	dialer   proxy.Dialer
 	addr     string
@@ -43,7 +43,7 @@ func init() {
 }
 
 // NewSOCKS5 returns a Proxy that makes SOCKS v5 connections to the given address
-// with an optional username and password. See RFC 1928.
+// with an optional username and password. (RFC 1928)
 func NewSOCKS5(s string, dialer proxy.Dialer) (*SOCKS5, error) {
 	u, err := url.Parse(s)
 	if err != nil {
@@ -81,7 +81,7 @@ func (s *SOCKS5) ListenAndServe() {
 	s.ListenAndServeTCP()
 }
 
-// ListenAndServeTCP .
+// ListenAndServeTCP listen and serve on tcp port.
 func (s *SOCKS5) ListenAndServeTCP() {
 	l, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -98,12 +98,12 @@ func (s *SOCKS5) ListenAndServeTCP() {
 			continue
 		}
 
-		go s.ServeTCP(c)
+		go s.Serve(c)
 	}
 }
 
-// ServeTCP .
-func (s *SOCKS5) ServeTCP(c net.Conn) {
+// Serve serves a connection.
+func (s *SOCKS5) Serve(c net.Conn) {
 	defer c.Close()
 
 	if c, ok := c.(*net.TCPConn); ok {
@@ -132,7 +132,7 @@ func (s *SOCKS5) ServeTCP(c net.Conn) {
 
 	rc, err := s.dialer.Dial("tcp", tgt.String())
 	if err != nil {
-		log.F("[socks5] failed to connect to target: %v", err)
+		log.F("[socks5] %s <-> %s, error in dial: %v", c.RemoteAddr(), tgt, err)
 		return
 	}
 	defer rc.Close()
@@ -189,7 +189,7 @@ func (s *SOCKS5) ListenAndServeUDP() {
 			nm.Store(raddr.String(), pc)
 
 			go func() {
-				conn.TimedCopy(c, raddr, pc, 2*time.Minute)
+				conn.RelayUDP(c, raddr, pc, 2*time.Minute)
 				pc.Close()
 				nm.Delete(raddr.String())
 			}()
@@ -211,7 +211,7 @@ func (s *SOCKS5) ListenAndServeUDP() {
 
 }
 
-// Addr returns forwarder's address
+// Addr returns forwarder's address.
 func (s *SOCKS5) Addr() string {
 	if s.addr == "" {
 		return s.dialer.Addr()
@@ -219,7 +219,7 @@ func (s *SOCKS5) Addr() string {
 	return s.addr
 }
 
-// NextDialer returns the next dialer
+// NextDialer returns the next dialer.
 func (s *SOCKS5) NextDialer(dstAddr string) proxy.Dialer { return s.dialer.NextDialer(dstAddr) }
 
 // Dial connects to the address addr on the network net via the SOCKS5 proxy.
@@ -232,7 +232,7 @@ func (s *SOCKS5) Dial(network, addr string) (net.Conn, error) {
 
 	c, err := s.dialer.Dial(network, s.addr)
 	if err != nil {
-		log.F("dial to %s error: %s", s.addr, err)
+		log.F("[socks5]: dial to %s error: %s", s.addr, err)
 		return nil, err
 	}
 
@@ -426,7 +426,7 @@ func (s *SOCKS5) connect(conn net.Conn, target string) error {
 
 // Handshake fast-tracks SOCKS initialization to get target address to connect.
 func (s *SOCKS5) handshake(rw io.ReadWriter) (socks.Addr, error) {
-	// Read RFC 1928 for request and reply structure and sizes.
+	// Read RFC 1928 for request and reply structure and sizes
 	buf := make([]byte, socks.MaxAddrLen)
 	// read VER, NMETHODS, METHODS
 	if _, err := io.ReadFull(rw, buf[:2]); err != nil {

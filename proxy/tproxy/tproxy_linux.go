@@ -114,6 +114,11 @@ func (s *TProxy) ListenAndServeUDP() {
 
 }
 
+// Serve .
+func (s *TProxy) Serve(c net.Conn) {
+	log.F("[tproxy] func Serve: can not be called directly")
+}
+
 // ReadFromUDP reads a UDP packet from c, copying the payload into b.
 // It returns the number of bytes copied into b and the return address
 // that was on the packet.

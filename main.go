@@ -14,7 +14,10 @@ import (
 	"github.com/nadoo/glider/strategy"
 
 	_ "github.com/nadoo/glider/proxy/http"
+	_ "github.com/nadoo/glider/proxy/kcp"
 	_ "github.com/nadoo/glider/proxy/mixed"
+	_ "github.com/nadoo/glider/proxy/obfs"
+	_ "github.com/nadoo/glider/proxy/reject"
 	_ "github.com/nadoo/glider/proxy/socks5"
 	_ "github.com/nadoo/glider/proxy/ss"
 	_ "github.com/nadoo/glider/proxy/ssr"
@@ -27,9 +30,12 @@ import (
 )
 
 // VERSION .
-const VERSION = "0.6.9"
+const VERSION = "0.7.0"
 
 func main() {
+	// TODO: remove this line when Go1.13 is released.
+	os.Setenv("GODEBUG", os.Getenv("GODEBUG")+",tls13=1")
+
 	// read configs
 	confInit()
 
@@ -44,7 +50,7 @@ func main() {
 	dialer := rule.NewDialer(conf.rules, strategy.NewDialer(conf.Forward, &conf.StrategyConfig))
 
 	// ipset manager
-	ipsetM, _ := ipset.NewManager(conf.IPSet, conf.rules)
+	ipsetM, _ := ipset.NewManager(conf.rules)
 
 	// check and setup dns server
 	if conf.DNS != "" {

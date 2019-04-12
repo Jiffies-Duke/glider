@@ -32,7 +32,7 @@ type RedirProxy struct {
 
 func init() {
 	proxy.RegisterServer("redir", NewRedirServer)
-	proxy.RegisterServer("redir6", NewRedirServer6)
+	proxy.RegisterServer("redir6", NewRedir6Server)
 }
 
 // NewRedirProxy returns a redirect proxy.
@@ -58,8 +58,8 @@ func NewRedirServer(s string, dialer proxy.Dialer) (proxy.Server, error) {
 	return NewRedirProxy(s, dialer, false)
 }
 
-// NewRedirServer returns a redir server.
-func NewRedirServer6(s string, dialer proxy.Dialer) (proxy.Server, error) {
+// NewRedir6Server returns a redir server for ipv6.
+func NewRedir6Server(s string, dialer proxy.Dialer) (proxy.Server, error) {
 	return NewRedirProxy(s, dialer, true)
 }
 
@@ -80,37 +80,45 @@ func (s *RedirProxy) ListenAndServe() {
 			continue
 		}
 
-		go func() {
-			defer c.Close()
+		go s.Serve(c)
+	}
+}
 
-			if c, ok := c.(*net.TCPConn); ok {
-				c.SetKeepAlive(true)
-			}
+// Serve .
+func (s *RedirProxy) Serve(c net.Conn) {
+	defer c.Close()
 
-			tgt, err := getOrigDst(c, s.ipv6)
-			if err != nil {
-				log.F("[redir] failed to get target address: %v", err)
-				return
-			}
+	if c, ok := c.(*net.TCPConn); ok {
+		c.SetKeepAlive(true)
+	}
 
-			rc, err := s.dialer.Dial("tcp", tgt.String())
-			if err != nil {
-				log.F("[redir] failed to connect to target: %v", err)
-				return
-			}
-			defer rc.Close()
+	tgt, err := getOrigDst(c, s.ipv6)
+	if err != nil {
+		log.F("[redir] failed to get target address: %v", err)
+		return
+	}
 
-			log.F("[redir] %s <-> %s", c.RemoteAddr(), tgt)
+	// loop request
+	if c.LocalAddr().String() == tgt.String() {
+		log.F("[redir] %s <-> %s, unallowed request to redir port", c.RemoteAddr(), tgt)
+		return
+	}
 
-			_, _, err = conn.Relay(c, rc)
-			if err != nil {
-				if err, ok := err.(net.Error); ok && err.Timeout() {
-					return // ignore i/o timeout
-				}
-				log.F("[redir] relay error: %v", err)
-			}
+	rc, err := s.dialer.Dial("tcp", tgt.String())
+	if err != nil {
+		log.F("[redir] %s <-> %s, error in dial: %v", c.RemoteAddr(), tgt, err)
+		return
+	}
+	defer rc.Close()
 
-		}()
+	log.F("[redir] %s <-> %s", c.RemoteAddr(), tgt)
+
+	_, _, err = conn.Relay(c, rc)
+	if err != nil {
+		if err, ok := err.(net.Error); ok && err.Timeout() {
+			return // ignore i/o timeout
+		}
+		log.F("[redir] relay error: %v", err)
 	}
 }
 

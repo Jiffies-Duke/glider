@@ -12,7 +12,7 @@ dns=:5353
 dnsserver=8.8.8.8:53
 strategy=rr
 checkwebsite=www.apple.com
-checkduration=30
+checkinterval=30
 ```
 
 #### Create a ipset manually
@@ -33,7 +33,7 @@ ipset=/example4.com/myset
 #### Config iptables on your linux gateway
 ```bash
 iptables -t nat -I PREROUTING -p tcp -m set --match-set myset dst -j REDIRECT --to-ports 1081
-iptables -t nat -I OUTPUT -p tcp -m set --match-set myset dst -j REDIRECT --to-ports 1081
+#iptables -t nat -I OUTPUT -p tcp -m set --match-set myset dst -j REDIRECT --to-ports 1081
 ```
 
 #### When client requests network, the whole process:

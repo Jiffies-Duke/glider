@@ -12,12 +12,12 @@ import (
 	"github.com/nadoo/glider/proxy"
 )
 
-// UDPTun struct
+// UDPTun is a base udptun struct.
 type UDPTun struct {
 	dialer proxy.Dialer
 	addr   string
-
-	raddr string
+	taddr  string       // tunnel addr string
+	tuaddr *net.UDPAddr // tunnel addr
 }
 
 func init() {
@@ -28,7 +28,7 @@ func init() {
 func NewUDPTun(s string, dialer proxy.Dialer) (*UDPTun, error) {
 	u, err := url.Parse(s)
 	if err != nil {
-		log.F("parse err: %s", err)
+		log.F("[udptun] parse err: %s", err)
 		return nil, err
 	}
 
@@ -38,10 +38,11 @@ func NewUDPTun(s string, dialer proxy.Dialer) (*UDPTun, error) {
 	p := &UDPTun{
 		dialer: dialer,
 		addr:   d[0],
-		raddr:  d[1],
+		taddr:  d[1],
 	}
 
-	return p, nil
+	p.tuaddr, err = net.ResolveUDPAddr("udp", p.taddr)
+	return p, err
 }
 
 // NewUDPTunServer returns a udp tunnel server.
@@ -49,7 +50,7 @@ func NewUDPTunServer(s string, dialer proxy.Dialer) (proxy.Server, error) {
 	return NewUDPTun(s, dialer)
 }
 
-// ListenAndServe .
+// ListenAndServe listen and serves on the given address.
 func (s *UDPTun) ListenAndServe() {
 	c, err := net.ListenPacket("udp", s.addr)
 	if err != nil {
@@ -71,12 +72,10 @@ func (s *UDPTun) ListenAndServe() {
 		}
 
 		var pc net.PacketConn
-		var writeAddr net.Addr
 
 		v, ok := nm.Load(raddr.String())
 		if !ok && v == nil {
-
-			pc, writeAddr, err = s.dialer.DialUDP("udp", s.raddr)
+			pc, _, err = s.dialer.DialUDP("udp", s.taddr)
 			if err != nil {
 				log.F("[udptun] remote dial error: %v", err)
 				continue
@@ -85,7 +84,7 @@ func (s *UDPTun) ListenAndServe() {
 			nm.Store(raddr.String(), pc)
 
 			go func() {
-				conn.TimedCopy(c, raddr, pc, 2*time.Minute)
+				conn.RelayUDP(c, raddr, pc, 2*time.Minute)
 				pc.Close()
 				nm.Delete(raddr.String())
 			}()
@@ -94,13 +93,18 @@ func (s *UDPTun) ListenAndServe() {
 			pc = v.(net.PacketConn)
 		}
 
-		_, err = pc.WriteTo(buf[:n], writeAddr)
+		_, err = pc.WriteTo(buf[:n], s.tuaddr)
 		if err != nil {
 			log.F("[udptun] remote write error: %v", err)
 			continue
 		}
 
-		log.F("[udptun] %s <-> %s", raddr, s.raddr)
+		log.F("[udptun] %s <-> %s", raddr, s.taddr)
 
 	}
+}
+
+// Serve serves a net.Conn, can not be called directly.
+func (s *UDPTun) Serve(c net.Conn) {
+	log.F("[udptun] func Serve: can not be called directly")
 }

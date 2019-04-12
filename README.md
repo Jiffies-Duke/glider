@@ -26,6 +26,9 @@ Listen (local proxy server):
 - TCP tunnel
 - UDP tunnel
 - UDP over TCP tunnel
+- TLS, use it together with above proxy protocols(tcp)
+- Unix domain socket, use it together with above proxy protocols(tcp)
+- KCP protocol, use it together with above proxy protocols(tcp)
 
 Forward (local proxy client/upstream proxy server):
 
@@ -36,6 +39,9 @@ Forward (local proxy client/upstream proxy server):
 - VMess proxy(tcp)
 - TLS, use it together with above proxy protocols(tcp)
 - Websocket, use it together with above proxy protocols(tcp)
+- Unix domain socket, use it together with above proxy protocols(tcp)
+- KCP protocol, use it together with above proxy protocols(tcp)
+- Simple-Obfs, use it together with above proxy protocols(tcp)
 
 DNS Forwarding Server (udp2tcp):
 
@@ -75,7 +81,7 @@ Binary:
 
 - [https://github.com/nadoo/glider/releases](https://github.com/nadoo/glider/releases)
 
-Go Get (requires **Go 1.10+** ):
+Go Get (requires **Go 1.12+** ):
 
 ```bash
 go get -u github.com/nadoo/glider
@@ -110,15 +116,17 @@ glider -config CONFIGPATH -listen :8080 -verbose
 ## Usage
 
 ```bash
-glider v0.6.8 usage:
-  -checkduration int
+glider v0.7.0 usage:
+  -checkinterval int
         proxy check interval(seconds) (default 30)
+  -checktimeout int
+        proxy check timeout(seconds) (default 10)
   -checkwebsite string
         proxy check HTTP(NOT HTTPS) website address, format: HOST[:PORT], default port: 80 (default "www.apple.com")
   -config string
         config file path
   -dns string
-        dns forwarder server listen address
+        local dns server listen address
   -dnsalwaystcp
         always use tcp to query upstream dns servers no matter there is a forwarder or not
   -dnsmaxttl int
@@ -128,15 +136,15 @@ glider v0.6.8 usage:
   -dnsrecord value
         custom dns record, format: domain/ip
   -dnsserver value
-        remote dns server
+        remote dns server address
   -dnstimeout int
         timeout value used in multiple dnsservers switch(seconds) (default 3)
   -forward value
         forward url, format: SCHEME://[USER|METHOD:PASSWORD@][HOST]:PORT?PARAMS[,SCHEME://[USER|METHOD:PASSWORD@][HOST]:PORT?PARAMS]
+  -include value
+        include file
   -interface string
         source ip or source interface
-  -ipset string
-        ipset name
   -listen value
         listen url, format: SCHEME://[USER|METHOD:PASSWORD@][HOST]:PORT?PARAMS
   -maxfailures int
@@ -160,13 +168,18 @@ Available Schemes:
   tls: tls transport
   ws: websocket transport
   redir: redirect proxy. (used on linux as a transparent proxy with iptables redirect rules)
+  redir6: redirect proxy(ipv6)
   tcptun: tcp tunnel
   udptun: udp tunnel
   uottun: udp over tcp tunnel
+  unix: unix domain socket
+  kcp: kcp protocol
+  simple-obfs: simple-obfs protocol
+  reject: a virtual proxy which just reject connections
 
 Available schemes for different modes:
-  listen: mixed ss socks5 http redir tcptun udptun uottun
-  forward: ss socks5 http ssr vmess tls ws
+  listen: mixed ss socks5 http redir redir6 tcptun udptun uottun tls unix kcp
+  forward: reject ss socks5 http ssr vmess tls ws unix kcp simple-bfs
 
 SS scheme:
   ss://method:pass@host:port
@@ -188,14 +201,23 @@ VMess scheme:
 Available securities for vmess:
   none, aes-128-gcm, chacha20-poly1305
 
-TLS scheme:
+TLS client scheme:
   tls://host:port[?skipVerify=true]
 
-TLS with a specified proxy protocol:
+Proxy over tls client:
   tls://host:port[?skipVerify=true],scheme://
   tls://host:port[?skipVerify=true],http://[user:pass@]
   tls://host:port[?skipVerify=true],socks5://[user:pass@]
   tls://host:port[?skipVerify=true],vmess://[security:]uuid@?alterID=num
+
+TLS server scheme:
+  tls://host:port?cert=PATH&key=PATH
+
+Proxy over tls server:
+  tls://host:port?cert=PATH&key=PATH,scheme://
+  tls://host:port?cert=PATH&key=PATH,http://
+  tls://host:port?cert=PATH&key=PATH,socks5://
+  tls://host:port?cert=PATH&key=PATH,ss://method:pass@
 
 Websocket scheme:
   ws://host:port[/path]
@@ -211,6 +233,21 @@ TLS and Websocket with a specified proxy protocol:
   tls://host:port[?skipVerify=true],ws://[@/path],http://[user:pass@]
   tls://host:port[?skipVerify=true],ws://[@/path],socks5://[user:pass@]
   tls://host:port[?skipVerify=true],ws://[@/path],vmess://[security:]uuid@?alterID=num
+
+Unix domain socket scheme:
+  unix://path
+
+KCP scheme:
+  kcp://CRYPT:KEY@host:port[?dataShards=NUM&parityShards=NUM]
+
+Available crypt types for KCP:
+  none, sm4, tea, xor, aes, aes-128, aes-192, blowfish, twofish, cast5, 3des, xtea, salsa20
+
+Simple-Obfs scheme:
+  simple-obfs://host:port[?type=TYPE&host=HOST&uri=URI&ua=UA]
+
+Available types for simple-obfs:
+  http, tls
 
 DNS forwarding server:
   dns=:53
@@ -256,6 +293,9 @@ Examples:
 
   glider -listen socks5://:1080 -verbose
     -listen on :1080 as a socks5 proxy server, in verbose mode.
+
+  glider -listen tls://:443?cert=crtFilePath&key=keyFilePath,http:// -verbose
+    -listen on :443 as a https(http over tls) proxy server.
 
   glider -listen http://:8080 -forward socks5://127.0.0.1:1080
     -listen on :8080 as a http proxy server, forward all requests via socks5 server.
@@ -303,12 +343,45 @@ Examples:
   - [transparent proxy with dnsmasq](config/examples/8.transparent_proxy_with_dnsmasq)
   - [transparent proxy without dnsmasq](config/examples/9.transparent_proxy_without_dnsmasq)
 
+### Proxy & Protocol Chain
+In glider, you can easily chain several proxy servers or protocols together, e.g:
+
+- Chain proxy servers:
+
+```bash
+forward=http://1.1.1.1:80,socks5://2.2.2.2:1080,ss://method:pass@3.3.3.3:8443@
+```
+
+- Chain protocols: https proxy (http over tls)
+
+```bash
+forward=tls://1.1.1.1:443,http://
+```
+
+- Chain protocols: vmess over ws over tls
+
+```bash
+forward=tls://1.1.1.1:443,ws://,vmess://5a146038-0b56-4e95-b1dc-5c6f5a32cd98@?alterID=2
+```
+
+- Chain protocols and servers:
+
+``` bash
+forward=socks5://1.1.1.1:1080,tls://2.2.2.2:443,ws://,vmess://5a146038-0b56-4e95-b1dc-5c6f5a32cd98@?alterID=2
+```
+
+- Chain protocols in listener: https proxy server
+
+``` bash
+listen=tls://:443?cert=crtFilePath&key=keyFilePath,http://
+```
+
+
 ## Service
 
 - systemd: [https://github.com/nadoo/glider/blob/master/systemd/](https://github.com/nadoo/glider/blob/master/systemd/)
 
 ## Links
 
-- [go-ss2](https://github.com/shadowsocks/go-shadowsocks2): ss protocol support
 - [conflag](https://github.com/nadoo/conflag): command line and config file parse support
 - [ArchLinux](https://www.archlinux.org/packages/community/x86_64/glider): a great linux distribution with glider pre-built package

@@ -29,8 +29,6 @@ var conf struct {
 	DNS       string
 	DNSConfig dns.Config
 
-	IPSet string
-
 	rules []*rule.Config
 }
 
@@ -41,34 +39,32 @@ func confInit() {
 	flag.StringSliceUniqVar(&conf.Forward, "forward", nil, "forward url, format: SCHEME://[USER|METHOD:PASSWORD@][HOST]:PORT?PARAMS[,SCHEME://[USER|METHOD:PASSWORD@][HOST]:PORT?PARAMS]")
 	flag.StringVar(&conf.StrategyConfig.Strategy, "strategy", "rr", "forward strategy, default: rr")
 	flag.StringVar(&conf.StrategyConfig.CheckWebSite, "checkwebsite", "www.apple.com", "proxy check HTTP(NOT HTTPS) website address, format: HOST[:PORT], default port: 80")
-	// TODO: change to checkinterval
-	flag.IntVar(&conf.StrategyConfig.CheckInterval, "checkduration", 30, "proxy check interval(seconds)")
+	flag.IntVar(&conf.StrategyConfig.CheckInterval, "checkinterval", 30, "proxy check interval(seconds)")
+	flag.IntVar(&conf.StrategyConfig.CheckTimeout, "checktimeout", 10, "proxy check timeout(seconds)")
 	flag.IntVar(&conf.StrategyConfig.MaxFailures, "maxfailures", 3, "max failures to change forwarder status to disabled")
 	flag.StringVar(&conf.StrategyConfig.IntFace, "interface", "", "source ip or source interface")
 
 	flag.StringSliceUniqVar(&conf.RuleFile, "rulefile", nil, "rule file path")
 	flag.StringVar(&conf.RulesDir, "rules-dir", "", "rule file folder")
 
-	flag.StringVar(&conf.DNS, "dns", "", "dns forwarder server listen address")
-	flag.StringSliceUniqVar(&conf.DNSConfig.Servers, "dnsserver", []string{"8.8.8.8:53"}, "remote dns server")
+	flag.StringVar(&conf.DNS, "dns", "", "local dns server listen address")
+	flag.StringSliceUniqVar(&conf.DNSConfig.Servers, "dnsserver", []string{"8.8.8.8:53"}, "remote dns server address")
 	flag.BoolVar(&conf.DNSConfig.AlwaysTCP, "dnsalwaystcp", false, "always use tcp to query upstream dns servers no matter there is a forwarder or not")
 	flag.IntVar(&conf.DNSConfig.Timeout, "dnstimeout", 3, "timeout value used in multiple dnsservers switch(seconds)")
 	flag.IntVar(&conf.DNSConfig.MaxTTL, "dnsmaxttl", 1800, "maximum TTL value for entries in the CACHE(seconds)")
 	flag.IntVar(&conf.DNSConfig.MinTTL, "dnsminttl", 0, "minimum TTL value for entries in the CACHE(seconds)")
 	flag.StringSliceUniqVar(&conf.DNSConfig.Records, "dnsrecord", nil, "custom dns record, format: domain/ip")
 
-	flag.StringVar(&conf.IPSet, "ipset", "", "ipset name")
-
 	flag.Usage = usage
 	err := flag.Parse()
 	if err != nil {
-		flag.Usage()
+		// flag.Usage()
 		fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
 		os.Exit(-1)
 	}
 
 	if len(conf.Listen) == 0 && conf.DNS == "" {
-		flag.Usage()
+		// flag.Usage()
 		fmt.Fprintf(os.Stderr, "ERROR: listen url must be specified.\n")
 		os.Exit(-1)
 	}
@@ -78,6 +74,7 @@ func confInit() {
 		if !path.IsAbs(ruleFile) {
 			ruleFile = path.Join(flag.ConfDir(), ruleFile)
 		}
+
 		rule, err := rule.NewConfFromFile(ruleFile)
 		if err != nil {
 			log.Fatal(err)
@@ -90,14 +87,13 @@ func confInit() {
 		if !path.IsAbs(conf.RulesDir) {
 			conf.RulesDir = path.Join(flag.ConfDir(), conf.RulesDir)
 		}
-		ruleFolderFiles, _ := rule.ListDir(conf.RulesDir, ".rule")
 
+		ruleFolderFiles, _ := rule.ListDir(conf.RulesDir, ".rule")
 		for _, ruleFile := range ruleFolderFiles {
 			rule, err := rule.NewConfFromFile(ruleFile)
 			if err != nil {
 				log.Fatal(err)
 			}
-
 			conf.rules = append(conf.rules, rule)
 		}
 	}
@@ -125,11 +121,15 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "  tcptun: tcp tunnel\n")
 	fmt.Fprintf(os.Stderr, "  udptun: udp tunnel\n")
 	fmt.Fprintf(os.Stderr, "  uottun: udp over tcp tunnel\n")
+	fmt.Fprintf(os.Stderr, "  unix: unix domain socket\n")
+	fmt.Fprintf(os.Stderr, "  kcp: kcp protocol\n")
+	fmt.Fprintf(os.Stderr, "  simple-obfs: simple-obfs protocol\n")
+	fmt.Fprintf(os.Stderr, "  reject: a virtual proxy which just reject connections\n")
 	fmt.Fprintf(os.Stderr, "\n")
 
 	fmt.Fprintf(os.Stderr, "Available schemes for different modes:\n")
-	fmt.Fprintf(os.Stderr, "  listen: mixed ss socks5 http redir redir6 tcptun udptun uottun\n")
-	fmt.Fprintf(os.Stderr, "  forward: ss socks5 http ssr vmess tls ws\n")
+	fmt.Fprintf(os.Stderr, "  listen: mixed ss socks5 http redir redir6 tcptun udptun uottun tls unix kcp\n")
+	fmt.Fprintf(os.Stderr, "  forward: reject ss socks5 http ssr vmess tls ws unix kcp simple-bfs\n")
 	fmt.Fprintf(os.Stderr, "\n")
 
 	fmt.Fprintf(os.Stderr, "SS scheme:\n")
@@ -157,15 +157,26 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "  none, aes-128-gcm, chacha20-poly1305\n")
 	fmt.Fprintf(os.Stderr, "\n")
 
-	fmt.Fprintf(os.Stderr, "TLS scheme:\n")
+	fmt.Fprintf(os.Stderr, "TLS client scheme:\n")
 	fmt.Fprintf(os.Stderr, "  tls://host:port[?skipVerify=true]\n")
 	fmt.Fprintf(os.Stderr, "\n")
 
-	fmt.Fprintf(os.Stderr, "TLS with a specified proxy protocol:\n")
+	fmt.Fprintf(os.Stderr, "Proxy over tls client:\n")
 	fmt.Fprintf(os.Stderr, "  tls://host:port[?skipVerify=true],scheme://\n")
 	fmt.Fprintf(os.Stderr, "  tls://host:port[?skipVerify=true],http://[user:pass@]\n")
 	fmt.Fprintf(os.Stderr, "  tls://host:port[?skipVerify=true],socks5://[user:pass@]\n")
 	fmt.Fprintf(os.Stderr, "  tls://host:port[?skipVerify=true],vmess://[security:]uuid@?alterID=num\n")
+	fmt.Fprintf(os.Stderr, "\n")
+
+	fmt.Fprintf(os.Stderr, "TLS server scheme:\n")
+	fmt.Fprintf(os.Stderr, "  tls://host:port?cert=PATH&key=PATH\n")
+	fmt.Fprintf(os.Stderr, "\n")
+
+	fmt.Fprintf(os.Stderr, "Proxy over tls server:\n")
+	fmt.Fprintf(os.Stderr, "  tls://host:port?cert=PATH&key=PATH,scheme://\n")
+	fmt.Fprintf(os.Stderr, "  tls://host:port?cert=PATH&key=PATH,http://\n")
+	fmt.Fprintf(os.Stderr, "  tls://host:port?cert=PATH&key=PATH,socks5://\n")
+	fmt.Fprintf(os.Stderr, "  tls://host:port?cert=PATH&key=PATH,ss://method:pass@\n")
 	fmt.Fprintf(os.Stderr, "\n")
 
 	fmt.Fprintf(os.Stderr, "Websocket scheme:\n")
@@ -184,6 +195,26 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "  tls://host:port[?skipVerify=true],ws://[@/path],http://[user:pass@]\n")
 	fmt.Fprintf(os.Stderr, "  tls://host:port[?skipVerify=true],ws://[@/path],socks5://[user:pass@]\n")
 	fmt.Fprintf(os.Stderr, "  tls://host:port[?skipVerify=true],ws://[@/path],vmess://[security:]uuid@?alterID=num\n")
+	fmt.Fprintf(os.Stderr, "\n")
+
+	fmt.Fprintf(os.Stderr, "Unix domain socket scheme:\n")
+	fmt.Fprintf(os.Stderr, "  unix://path\n")
+	fmt.Fprintf(os.Stderr, "\n")
+
+	fmt.Fprintf(os.Stderr, "KCP scheme:\n")
+	fmt.Fprintf(os.Stderr, "  kcp://CRYPT:KEY@host:port[?dataShards=NUM&parityShards=NUM]\n")
+	fmt.Fprintf(os.Stderr, "\n")
+
+	fmt.Fprintf(os.Stderr, "Available crypt types for KCP:\n")
+	fmt.Fprintf(os.Stderr, "  none, sm4, tea, xor, aes, aes-128, aes-192, blowfish, twofish, cast5, 3des, xtea, salsa20\n")
+	fmt.Fprintf(os.Stderr, "\n")
+
+	fmt.Fprintf(os.Stderr, "Simple-Obfs scheme:\n")
+	fmt.Fprintf(os.Stderr, "  simple-obfs://host:port[?type=TYPE&host=HOST&uri=URI&ua=UA]\n")
+	fmt.Fprintf(os.Stderr, "\n")
+
+	fmt.Fprintf(os.Stderr, "Available types for simple-obfs:\n")
+	fmt.Fprintf(os.Stderr, "  http, tls\n")
 	fmt.Fprintf(os.Stderr, "\n")
 
 	fmt.Fprintf(os.Stderr, "DNS forwarding server:\n")
@@ -234,6 +265,9 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "  "+app+" -listen socks5://:1080 -verbose\n")
 	fmt.Fprintf(os.Stderr, "    -listen on :1080 as a socks5 proxy server, in verbose mode.\n")
+	fmt.Fprintf(os.Stderr, "\n")
+	fmt.Fprintf(os.Stderr, "  "+app+" -listen tls://:443?cert=crtFilePath&key=keyFilePath,http:// -verbose\n")
+	fmt.Fprintf(os.Stderr, "    -listen on :443 as a https(http over tls) proxy server.\n")
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "  "+app+" -listen http://:8080 -forward socks5://127.0.0.1:1080\n")
 	fmt.Fprintf(os.Stderr, "    -listen on :8080 as a http proxy server, forward all requests via socks5 server.\n")

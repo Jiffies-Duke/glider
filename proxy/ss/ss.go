@@ -16,7 +16,7 @@ import (
 	"github.com/nadoo/glider/proxy"
 )
 
-// SS .
+// SS is a base ss struct.
 type SS struct {
 	dialer proxy.Dialer
 	addr   string
@@ -29,7 +29,7 @@ func init() {
 	proxy.RegisterServer("ss", NewSSServer)
 }
 
-// NewSS returns a shadowsocks proxy.
+// NewSS returns a ss proxy.
 func NewSS(s string, dialer proxy.Dialer) (*SS, error) {
 	u, err := url.Parse(s)
 	if err != nil {
@@ -87,12 +87,13 @@ func (s *SS) ListenAndServeTCP() {
 			log.F("[ss] failed to accept: %v", err)
 			continue
 		}
-		go s.ServeTCP(c)
+		go s.Serve(c)
 	}
+
 }
 
-// ServeTCP serves tcp ss requests.
-func (s *SS) ServeTCP(c net.Conn) {
+// Serve serves a connection.
+func (s *SS) Serve(c net.Conn) {
 	defer c.Close()
 
 	if c, ok := c.(*net.TCPConn); ok {
@@ -148,7 +149,7 @@ func (s *SS) ServeTCP(c net.Conn) {
 
 	rc, err := dialer.Dial(network, tgt.String())
 	if err != nil {
-		log.F("[ss] failed to connect to target: %v", err)
+		log.F("[ss] %s <-> %s, error in dial: %v", c.RemoteAddr(), tgt, err)
 		return
 	}
 	defer rc.Close()
@@ -203,7 +204,7 @@ func (s *SS) ListenAndServeUDP() {
 			nm.Store(raddr.String(), pc)
 
 			go func() {
-				conn.TimedCopy(c, raddr, pc, 2*time.Minute)
+				conn.RelayUDP(c, raddr, pc, 2*time.Minute)
 				pc.Close()
 				nm.Delete(raddr.String())
 			}()
@@ -224,12 +225,12 @@ func (s *SS) ListenAndServeUDP() {
 	}
 }
 
-// ListCipher .
+// ListCipher returns all the ciphers supported.
 func ListCipher() string {
 	return strings.Join(core.ListCipher(), " ")
 }
 
-// Addr returns forwarder's address
+// Addr returns forwarder's address.
 func (s *SS) Addr() string {
 	if s.addr == "" {
 		return s.dialer.Addr()
@@ -237,7 +238,7 @@ func (s *SS) Addr() string {
 	return s.addr
 }
 
-// NextDialer returns the next dialer
+// NextDialer returns the next dialer.
 func (s *SS) NextDialer(dstAddr string) proxy.Dialer { return s.dialer.NextDialer(dstAddr) }
 
 // Dial connects to the address addr on the network net via the proxy.

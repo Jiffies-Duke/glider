@@ -56,6 +56,10 @@ func ForwarderFromURL(s, intface string) (f *Forwarder, err error) {
 	f.Dialer = d
 	f.addr = d.Addr()
 
+	// set forwarder to disabled by default
+	// TODO: check here
+	f.Disable()
+
 	return f, err
 }
 
@@ -87,9 +91,9 @@ func (f *Forwarder) Dial(network, addr string) (c net.Conn, err error) {
 	c, err = f.Dialer.Dial(network, addr)
 	if err != nil {
 		f.IncFailures()
-		if f.Failures() >= f.MaxFailures() {
+		if f.Failures() >= f.MaxFailures() && f.Enabled() {
 			f.Disable()
-			log.F("[forwarder] %s reaches maxfailures, set to DISABLED", f.addr)
+			log.F("[forwarder] %s reaches maxfailures.", f.addr)
 		}
 	}
 

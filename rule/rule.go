@@ -85,7 +85,7 @@ func (rd *Dialer) NextDialer(dstAddr string) proxy.Dialer {
 
 	domainParts := strings.Split(host, ".")
 	length := len(domainParts)
-	for i := length - 2; i >= 0; i-- {
+	for i := length - 1; i >= 0; i-- {
 		domain := strings.Join(domainParts[i:length], ".")
 
 		// find in domainMap
@@ -112,7 +112,7 @@ func (rd *Dialer) AddDomainIP(domain, ip string) error {
 	if ip != "" {
 		domainParts := strings.Split(domain, ".")
 		length := len(domainParts)
-		for i := length - 2; i >= 0; i-- {
+		for i := length - 1; i >= 0; i-- {
 			pDomain := strings.ToLower(strings.Join(domainParts[i:length], "."))
 
 			// find in domainMap
@@ -121,7 +121,6 @@ func (rd *Dialer) AddDomainIP(domain, ip string) error {
 				log.F("[rule] add ip=%s, based on rule: domain=%s & domain/ip: %s/%s\n", ip, pDomain, domain, ip)
 			}
 		}
-
 	}
 	return nil
 }
